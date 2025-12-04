@@ -24,12 +24,12 @@ class AppPages {
     ),
     GetPage(
       name: _Paths.BARANG,
-      page: () => const BarangView(),
+      page: () => BarangView(),
       binding: BarangBinding(),
     ),
     GetPage(
       name: _Paths.ANGGOTA,
-      page: () => const AnggotaView(),
+      page: () => AnggotaView(),
       binding: AnggotaBinding(),
     ),
     GetPage(

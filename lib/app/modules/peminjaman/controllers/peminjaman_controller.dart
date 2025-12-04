@@ -2,10 +2,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
+import '../../../service/export_service.dart';
+
 class PeminjamanController extends GetxController {
   final search = ''.obs;
   final isLoading = false.obs;
-  
+
   // Controller untuk form peminjaman
   final anggotaIdC = TextEditingController();
   final barangIdC = TextEditingController();
@@ -14,11 +16,12 @@ class PeminjamanController extends GetxController {
   final tanggalRencanaKembaliC = TextEditingController();
   final catatanC = TextEditingController();
   final statusC = TextEditingController(text: "dipinjam");
-  
+  final RxString statusPengembalian = 'selesai'.obs;
+
   // Untuk pencarian
   final selectedAnggota = Rx<Map<String, dynamic>?>(null);
   final selectedBarang = Rx<Map<String, dynamic>?>(null);
-  
+
   final isFormValid = false.obs;
   final peminjamanList = <Map<String, dynamic>>[].obs;
 
@@ -26,6 +29,63 @@ class PeminjamanController extends GetxController {
   void onInit() {
     super.onInit();
     loadPeminjaman();
+  }
+
+
+  final ExportService exportService = ExportService();
+
+  // Header untuk file export
+  final List<String> peminjamanHeaders = [
+    'Nama Anggota',
+    'Nama Barang',
+    'Jumlah',
+    'Kondisi Saat Pinjam',
+    'Kondisi Saat Kembali',
+    'Tanggal Pinjam',
+    'Rencana Kembali',
+    'Tanggal Kembali',
+    'Status',
+    'Catatan',
+  ];
+
+  // Field yang diambil dari Map Firestore
+  final List<String> peminjamanFields = [
+    'anggotaDetail.nama',
+    'barangDetail.nama',
+    'jumlah',
+    'kondisiSaatPinjam',
+    'kondisiSaatKembali',
+    'tanggalPinjam',
+    'tanggalRencanaKembali',
+    'tanggalKembali',
+    'status',
+    'catatan',
+  ];
+
+  void handleExportPeminjaman(String format) async {
+    final data = peminjamanList; // semua data peminjaman
+
+    try {
+      if (format == 'excel') {
+        await exportService.exportToXlsx(
+          title: "Data Peminjaman",
+          headers: peminjamanHeaders,
+          fields: peminjamanFields,
+          data: data,
+        );
+      } else if (format == 'pdf') {
+        await exportService.exportToPdf(
+          title: "Data Peminjaman",
+          headers: peminjamanHeaders,
+          fields: peminjamanFields,
+          data: data,
+        );
+      }
+
+      Get.snackbar("Export", "Export berhasil ($format)");
+    } catch (e) {
+      Get.snackbar("Error", "Gagal export: $e");
+    }
   }
 
   // =====================================================
@@ -42,9 +102,13 @@ class PeminjamanController extends GetxController {
   }) async {
     try {
       // Membuat referensi ke dokumen anggota dan barang
-      final anggotaRef = FirebaseFirestore.instance.collection("anggota").doc(anggotaId);
-      final barangRef = FirebaseFirestore.instance.collection("barang").doc(barangId);
-      
+      final anggotaRef = FirebaseFirestore.instance
+          .collection("anggota")
+          .doc(anggotaId);
+      final barangRef = FirebaseFirestore.instance
+          .collection("barang")
+          .doc(barangId);
+
       // Mengurangi stok barang
       await kurangiStokBarang(barangId, jumlah);
 
@@ -78,42 +142,61 @@ class PeminjamanController extends GetxController {
     required String peminjamanId,
     required String kondisiSaatKembali,
     required String status,
+    required int jumlahRusak,
+    required int jumlahHilang,
     String? catatanTambahan,
   }) async {
     try {
-      // Mendapatkan data peminjaman
       final peminjamanDoc = await FirebaseFirestore.instance
           .collection("peminjaman")
           .doc(peminjamanId)
           .get();
-      
-      if (peminjamanDoc.exists) {
-        final data = peminjamanDoc.data()!;
-        final barangId = data['barangId'];
-        final jumlah = data['jumlah'];
-        
-        // Jika status selesai, tambah stok barang kembali
-        if (status == 'selesai') {
-          await tambahStokBarang(barangId, jumlah);
-        }
 
-        await FirebaseFirestore.instance
-            .collection("peminjaman")
-            .doc(peminjamanId)
-            .update({
-          "kondisiSaatKembali": kondisiSaatKembali,
-          "status": status,
-          "tanggalKembali": DateTime.now().toIso8601String(),
-          "catatan": catatanTambahan != null 
-              ? "${data['catatan'] ?? ''}\n[Pengembalian]: $catatanTambahan"
-              : data['catatan'],
-          "update": DateTime.now().toIso8601String(),
-        });
+      if (!peminjamanDoc.exists) return;
 
-        print('Pengembalian berhasil diupdate');
+      final data = peminjamanDoc.data()!;
+      final barangId = data['barangId'];
+      final jumlahDipinjam = data['jumlah'];
+
+      // Hitung jumlah yang benar-benar kembali
+      int jumlahKembali = jumlahDipinjam;
+
+      if (status == 'rusak') {
+        jumlahKembali = jumlahDipinjam - jumlahRusak;
+      } else if (status == 'hilang') {
+        jumlahKembali = jumlahDipinjam - jumlahHilang;
       }
+
+      if (jumlahKembali < 0) jumlahKembali = 0;
+
+      // === Update stok barang ===
+      if (jumlahKembali > 0) {
+        await FirebaseFirestore.instance
+            .collection("barang")
+            .doc(barangId)
+            .update({"stok": FieldValue.increment(jumlahKembali)});
+      }
+
+      // === Update data peminjaman ===
+      await FirebaseFirestore.instance
+          .collection("peminjaman")
+          .doc(peminjamanId)
+          .update({
+            "kondisiSaatKembali": kondisiSaatKembali,
+            "status": status,
+            "tanggalKembali": DateTime.now().toIso8601String(),
+            "jumlahKembali": jumlahKembali,
+            "jumlahRusak": jumlahRusak,
+            "jumlahHilang": jumlahHilang,
+            "catatan": catatanTambahan != null
+                ? "${data['catatan'] ?? ''}\n[Pengembalian]: $catatanTambahan"
+                : data['catatan'],
+            "update": DateTime.now().toIso8601String(),
+          });
+
+      print("Pengembalian berhasil diupdate");
     } catch (e) {
-      print("Error updating pengembalian: $e");
+      print("❌ Error updating pengembalian: $e");
     }
   }
 
@@ -126,18 +209,18 @@ class PeminjamanController extends GetxController {
           .collection("barang")
           .doc(barangId)
           .get();
-      
+
       if (barangDoc.exists) {
         final stokSekarang = barangDoc.data()!['stok'] ?? 0;
         final stokBaru = stokSekarang - jumlah;
-        
+
         await FirebaseFirestore.instance
             .collection("barang")
             .doc(barangId)
             .update({
-          "stok": stokBaru >= 0 ? stokBaru : 0,
-          "update": DateTime.now().toIso8601String(),
-        });
+              "stok": stokBaru >= 0 ? stokBaru : 0,
+              "update": DateTime.now().toIso8601String(),
+            });
       }
     } catch (e) {
       print('Error mengurangi stok: $e');
@@ -153,18 +236,18 @@ class PeminjamanController extends GetxController {
           .collection("barang")
           .doc(barangId)
           .get();
-      
+
       if (barangDoc.exists) {
         final stokSekarang = barangDoc.data()!['stok'] ?? 0;
         final stokBaru = stokSekarang + jumlah;
-        
+
         await FirebaseFirestore.instance
             .collection("barang")
             .doc(barangId)
             .update({
-          "stok": stokBaru,
-          "update": DateTime.now().toIso8601String(),
-        });
+              "stok": stokBaru,
+              "update": DateTime.now().toIso8601String(),
+            });
       }
     } catch (e) {
       print('Error menambah stok: $e');
@@ -175,52 +258,53 @@ class PeminjamanController extends GetxController {
   // LOAD PEMINJAMAN DENGAN DATA TERKAIT
   // =====================================================
   void loadPeminjaman() {
-    FirebaseFirestore.instance.collection("peminjaman")
-      .orderBy('tanggalPinjam', descending: true)
-      .snapshots()
-      .listen((snap) async {
-        // Untuk setiap peminjaman, load data anggota dan barang terkait
-        final peminjamanWithDetails = <Map<String, dynamic>>[];
-        
-        for (var doc in snap.docs) {
-          final data = Map<String, dynamic>.from(doc.data());
-          data["id"] = doc.id;
-          
-          // Load data anggota jika ada referensi
-          if (data['anggotaId'] != null) {
-            try {
-              final anggotaDoc = await FirebaseFirestore.instance
-                  .collection("anggota")
-                  .doc(data['anggotaId'])
-                  .get();
-              if (anggotaDoc.exists) {
-                data['anggotaDetail'] = anggotaDoc.data();
+    FirebaseFirestore.instance
+        .collection("peminjaman")
+        .orderBy('tanggalPinjam', descending: true)
+        .snapshots()
+        .listen((snap) async {
+          // Untuk setiap peminjaman, load data anggota dan barang terkait
+          final peminjamanWithDetails = <Map<String, dynamic>>[];
+
+          for (var doc in snap.docs) {
+            final data = Map<String, dynamic>.from(doc.data());
+            data["id"] = doc.id;
+
+            // Load data anggota jika ada referensi
+            if (data['anggotaId'] != null) {
+              try {
+                final anggotaDoc = await FirebaseFirestore.instance
+                    .collection("anggota")
+                    .doc(data['anggotaId'])
+                    .get();
+                if (anggotaDoc.exists) {
+                  data['anggotaDetail'] = anggotaDoc.data();
+                }
+              } catch (e) {
+                print('Error loading anggota: $e');
               }
-            } catch (e) {
-              print('Error loading anggota: $e');
             }
-          }
-          
-          // Load data barang jika ada referensi
-          if (data['barangId'] != null) {
-            try {
-              final barangDoc = await FirebaseFirestore.instance
-                  .collection("barang")
-                  .doc(data['barangId'])
-                  .get();
-              if (barangDoc.exists) {
-                data['barangDetail'] = barangDoc.data();
+
+            // Load data barang jika ada referensi
+            if (data['barangId'] != null) {
+              try {
+                final barangDoc = await FirebaseFirestore.instance
+                    .collection("barang")
+                    .doc(data['barangId'])
+                    .get();
+                if (barangDoc.exists) {
+                  data['barangDetail'] = barangDoc.data();
+                }
+              } catch (e) {
+                print('Error loading barang: $e');
               }
-            } catch (e) {
-              print('Error loading barang: $e');
             }
+
+            peminjamanWithDetails.add(data);
           }
-          
-          peminjamanWithDetails.add(data);
-        }
-        
-        peminjamanList.value = peminjamanWithDetails;
-      });
+
+          peminjamanList.value = peminjamanWithDetails;
+        });
   }
 
   // =====================================================
@@ -228,11 +312,14 @@ class PeminjamanController extends GetxController {
   // =====================================================
   Future<Map<String, dynamic>?> getPeminjamanById(String id) async {
     try {
-      final doc = await FirebaseFirestore.instance.collection("peminjaman").doc(id).get();
+      final doc = await FirebaseFirestore.instance
+          .collection("peminjaman")
+          .doc(id)
+          .get();
       if (doc.exists) {
         final data = Map<String, dynamic>.from(doc.data()!);
         data["id"] = doc.id;
-        
+
         // Load detail anggota dan barang
         if (data['anggotaId'] != null) {
           final anggota = await FirebaseFirestore.instance
@@ -243,7 +330,7 @@ class PeminjamanController extends GetxController {
             data['anggotaDetail'] = anggota.data();
           }
         }
-        
+
         if (data['barangId'] != null) {
           final barang = await FirebaseFirestore.instance
               .collection("barang")
@@ -253,7 +340,7 @@ class PeminjamanController extends GetxController {
             data['barangDetail'] = barang.data();
           }
         }
-        
+
         return data;
       }
       return null;
@@ -290,16 +377,14 @@ class PeminjamanController extends GetxController {
   List<Map<String, dynamic>> get filteredPeminjaman {
     if (search.value.isEmpty) return peminjamanList;
 
-    return peminjamanList
-        .where((p) {
-          final namaAnggota = p['anggotaDetail']?['nama'] ?? '';
-          final namaBarang = p['barangDetail']?['nama'] ?? '';
-          final searchLower = search.value.toLowerCase();
-          
-          return namaAnggota.toString().toLowerCase().contains(searchLower) ||
-                 namaBarang.toString().toLowerCase().contains(searchLower);
-        })
-        .toList();
+    return peminjamanList.where((p) {
+      final namaAnggota = p['anggotaDetail']?['nama'] ?? '';
+      final namaBarang = p['barangDetail']?['nama'] ?? '';
+      final searchLower = search.value.toLowerCase();
+
+      return namaAnggota.toString().toLowerCase().contains(searchLower) ||
+          namaBarang.toString().toLowerCase().contains(searchLower);
+    }).toList();
   }
 
   // =====================================================
@@ -327,7 +412,8 @@ class PeminjamanController extends GetxController {
     String kondisiSaatPinjam,
     String tanggalRencanaKembali,
   ) {
-    isFormValid.value = anggotaId.isNotEmpty &&
+    isFormValid.value =
+        anggotaId.isNotEmpty &&
         barangId.isNotEmpty &&
         jumlah.isNotEmpty &&
         kondisiSaatPinjam.isNotEmpty &&

@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'package:inventaris_robotik/app/modules/barang/controllers/barang_controller.dart';
 
 import '../../../helper/loading.dart';
+import '../../login/bindings/login_binding.dart';
 import '../../login/views/login_view.dart';
 
 class NavigationController extends GetxController {
@@ -26,8 +27,12 @@ class NavigationController extends GetxController {
 
     await Future.delayed(const Duration(milliseconds: 500));
 
+    // HAPUS semua controller GetX biar tidak bentrok
+    Get.deleteAll(force: true);
+
     LoadingHelper.hide();
-    Get.offAll(() => const LoginView());
+
+    Get.offAll(() => const LoginView(), binding: LoginBinding());
   }
 
   // Di NavigationController atau controller yang mengatur logout

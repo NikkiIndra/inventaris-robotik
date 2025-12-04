@@ -27,8 +27,8 @@ class NavigationView extends GetView<NavigationController> {
                     return IndexedStack(
                       index: controller.currentIndex.value,
                       children: [
-                        const BarangView(),
-                        const AnggotaView(),
+                         BarangView(),
+                        AnggotaView(),
                         PeminjamanView(),
                       ],
                     );

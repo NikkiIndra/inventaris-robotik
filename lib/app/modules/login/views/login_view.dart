@@ -41,8 +41,9 @@ class LoginView extends GetView<LoginController> {
             TextFormField(
               controller: controller.emailController,
               validator: (value) {
-                if (value == null || value.isEmpty)
+                if (value == null || value.isEmpty) {
                   return 'Enter username or email';
+                }
                 final trimmed = value.trim();
 
                 // allow fixed username 'koperasi'

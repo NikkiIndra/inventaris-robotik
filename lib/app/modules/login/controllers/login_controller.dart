@@ -1,12 +1,13 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:get/get.dart';
 
 import '../../../helper/loading.dart';
 
-
 class LoginController extends GetxController {
   final formKey = GlobalKey<FormState>();
+  RxString userRole = ''.obs;
 
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
@@ -17,10 +18,26 @@ class LoginController extends GetxController {
   final auth = FirebaseAuth.instance;
 
   @override
-  void onClose() {
-    emailController.dispose();
-    passwordController.dispose();
-    super.onClose();
+  void onInit() {
+    super.onInit();
+    getUserRole();
+  }
+
+  Future<void> getUserRole() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      userRole.value = '';
+      return;
+    }
+
+    final doc = await FirebaseFirestore.instance
+        .collection("users")
+        .doc(user.uid)
+        .get();
+
+    if (doc.exists) {
+      userRole.value = doc["role"];
+    }
   }
 
   // Method untuk reset controller tanpa dispose
@@ -51,6 +68,9 @@ class LoginController extends GetxController {
 
     try {
       await auth.signInWithEmailAndPassword(email: email, password: password);
+
+      // setelah login → load role
+      await getUserRole();
 
       LoadingHelper.hide();
       Get.offAllNamed('/navigation');

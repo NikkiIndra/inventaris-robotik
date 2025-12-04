@@ -40,7 +40,7 @@ class AddBarang extends StatelessWidget {
               
               // DROPDOWN KATEGORI
               DropdownButtonFormField<String>(
-                value: controller.kategoriC.text, // Pastikan ini ada di items list
+                initialValue: controller.kategoriC.text, // Pastikan ini ada di items list
                 decoration: const InputDecoration(
                   labelText: "Kategori",
                   border: OutlineInputBorder(),
@@ -111,7 +111,7 @@ class AddBarang extends StatelessWidget {
               
               // DROPDOWN KONDISI
               DropdownButtonFormField<String>(
-                value: controller.kondisiC.text, // Pastikan ini ada di items list
+                initialValue: controller.kondisiC.text, // Pastikan ini ada di items list
                 decoration: const InputDecoration(
                   labelText: "Kondisi",
                   border: OutlineInputBorder(),

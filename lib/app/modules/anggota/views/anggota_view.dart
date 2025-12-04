@@ -4,11 +4,12 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../../helper/format_tanggal.dart';
+import '../../login/controllers/login_controller.dart';
 import '../controllers/anggota_controller.dart';
 
 class AnggotaView extends GetView<AnggotaController> {
-  const AnggotaView({super.key});
-
+  AnggotaView({super.key});
+  final authC = Get.put(LoginController());
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -47,22 +48,24 @@ class AnggotaView extends GetView<AnggotaController> {
                   ),
                 ),
                 const SizedBox(width: 14),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.purple.shade700,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
+                if (authC.userRole.value == "admin" ||
+                    authC.userRole.value == "inventaris")
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.purple.shade700,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                    ),
+                    onPressed: () {
+                      Get.dialog(openAddAnggotaDialog());
+                    },
+                    icon: const Icon(Icons.add, color: Colors.white),
+                    label: const Text(
+                      "Tambah Anggota",
+                      style: TextStyle(color: Colors.white),
                     ),
                   ),
-                  onPressed: () {
-                    Get.dialog(openAddAnggotaDialog());
-                  },
-                  icon: const Icon(Icons.add, color: Colors.white),
-                  label: const Text(
-                    "Tambah Anggota",
-                    style: TextStyle(color: Colors.white),
-                  ),
-                ),
               ],
             ),
 
@@ -105,51 +108,29 @@ class AnggotaView extends GetView<AnggotaController> {
                         const Color(0xFFF4EEFA),
                       ),
                       minWidth: 1200,
-                      columns: const [
+                      columns: [
                         DataColumn(label: Text("Nama")),
                         DataColumn(label: Text("Kontak")),
                         DataColumn(label: Text("Divisi/Bagian")),
                         DataColumn(label: Text("Status")),
                         DataColumn(label: Text("Tanggal Daftar")),
                         DataColumn(label: Text("Update")),
-                        DataColumn(label: Text("Aksi")),
+                        if (authC.userRole.value == "admin" ||
+                            authC.userRole.value == "inventaris")
+                          DataColumn(label: Text("Aksi")),
                       ],
                       rows: controller.filteredAnggota.map((e) {
+                        final isAdmin = authC.userRole.value == "admin";
+                        final isInventaris =
+                            authC.userRole.value == "inventaris";
+
                         return DataRow(
                           cells: [
-                            // NAMA
-                            DataCell(
-                              Tooltip(
-                                message: e['nama'],
-                                child: Text(
-                                  e['nama'],
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ),
-
-                            // KONTAK
+                            DataCell(Text(e['nama'])),
                             DataCell(Text(e['kontak'])),
-
-                            // DIVISI/BAGIAN
-                            DataCell(
-                              Text(
-                                e['divisi'] ?? '-',
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-
-                            // STATUS
+                            DataCell(Text(e['divisi'] ?? '-')),
                             DataCell(statusBadge(e['status'])),
-
-                            // TANGGAL DAFTAR
-                            DataCell(
-                              Text(
-                                formatTanggal(e['tanggalDaftar']),
-                              ),
-                            ),
-
-                            // UPDATE
+                            DataCell(Text(formatTanggal(e['tanggalDaftar']))),
                             DataCell(
                               Text(
                                 e['update'] == null
@@ -158,27 +139,62 @@ class AnggotaView extends GetView<AnggotaController> {
                               ),
                             ),
 
-                            // AKSI (HANYA EDIT, TIDAK ADA DELETE)
-                            DataCell(
-                              Row(
-                                children: [
-                                  // EDIT
-                                  GestureDetector(
-                                    onTap: () {
-                                      controller.namaC.text = e['nama'];
-                                      controller.kontakC.text = e['kontak'];
-                                      controller.divisiC.text = e['divisi'] ?? '';
-                                      controller.statusC.text = e['status'];
-                                      Get.dialog(editAnggotaDialog(e['id']));
-                                    },
-                                    child: Tooltip(
-                                      message: "Edit Anggota",
-                                      child: const Icon(Icons.edit, size: 20),
-                                    ),
-                                  ),
-                                ],
+                            // === TAMBAHKAN DATA CELL AKSI HANYA UNTUK ADMIN & INVENTARIS ===
+                            if (isAdmin || isInventaris)
+                              DataCell(
+                                Row(
+                                  children: [
+                                    // EDIT
+                                    if (isAdmin || isInventaris)
+                                      GestureDetector(
+                                        onTap: () {
+                                          controller.namaC.text = e['nama'];
+                                          controller.kontakC.text = e['kontak'];
+                                          controller.divisiC.text =
+                                              e['divisi'] ?? '';
+                                          controller.statusC.text = e['status'];
+                                          Get.dialog(
+                                            editAnggotaDialog(e['id']),
+                                          );
+                                        },
+                                        child: Tooltip(
+                                          message: "Edit Anggota",
+                                          child: const Icon(
+                                            Icons.edit,
+                                            size: 20,
+                                          ),
+                                        ),
+                                      ),
+                                    const SizedBox(width: 12),
+                                    // DELETE hanya admin
+                                    if (isAdmin)
+                                      GestureDetector(
+                                        onTap: () {
+                                          Get.defaultDialog(
+                                            title: "Hapus Anggota?",
+                                            middleText:
+                                                "Yakin ingin menghapus anggota ini?",
+                                            onConfirm: () {
+                                              controller.deleteAnggota(e['id']);
+                                              Get.back();
+                                            },
+                                            textConfirm: "Hapus",
+                                            textCancel: "Batal",
+                                          );
+                                        },
+
+                                        child: Tooltip(
+                                          message: "Hapus Anggota",
+                                          child: const Icon(
+                                            CupertinoIcons.delete,
+                                            size: 20,
+                                            color: Colors.red,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
                               ),
-                            ),
                           ],
                         );
                       }).toList(),
@@ -213,12 +229,14 @@ class AnggotaView extends GetView<AnggotaController> {
             ),
             TextField(
               controller: controller.divisiC,
-              decoration: const InputDecoration(labelText: "Divisi/Kelas/Bagian (Opsional)"),
+              decoration: const InputDecoration(
+                labelText: "Divisi/Kelas/Bagian (Opsional)",
+              ),
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: controller.statusC.text.isNotEmpty 
-                  ? controller.statusC.text 
+              initialValue: controller.statusC.text.isNotEmpty
+                  ? controller.statusC.text
                   : 'aktif',
               items: const [
                 DropdownMenuItem(value: 'aktif', child: Text('Aktif')),
@@ -239,11 +257,12 @@ class AnggotaView extends GetView<AnggotaController> {
         TextButton(onPressed: () => Get.back(), child: const Text("Batal")),
         ElevatedButton(
           onPressed: () async {
-            if (controller.namaC.text.isEmpty || controller.kontakC.text.isEmpty) {
+            if (controller.namaC.text.isEmpty ||
+                controller.kontakC.text.isEmpty) {
               Get.snackbar("Error", "Nama dan Kontak wajib diisi");
               return;
             }
-            
+
             await controller.updateAnggota(id);
             controller.clearForm();
             Get.back();
@@ -274,11 +293,13 @@ class AnggotaView extends GetView<AnggotaController> {
             ),
             TextField(
               controller: controller.divisiC,
-              decoration: const InputDecoration(labelText: "Divisi/Kelas/Bagian (Opsional)"),
+              decoration: const InputDecoration(
+                labelText: "Divisi/Kelas/Bagian (Opsional)",
+              ),
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: 'aktif',
+              initialValue: 'aktif',
               items: const [
                 DropdownMenuItem(value: 'aktif', child: Text('Aktif')),
                 DropdownMenuItem(value: 'nonaktif', child: Text('Nonaktif')),
@@ -298,7 +319,8 @@ class AnggotaView extends GetView<AnggotaController> {
         TextButton(onPressed: () => Get.back(), child: const Text("Batal")),
         ElevatedButton(
           onPressed: () {
-            if (controller.namaC.text.isEmpty || controller.kontakC.text.isEmpty) {
+            if (controller.namaC.text.isEmpty ||
+                controller.kontakC.text.isEmpty) {
               Get.snackbar("Error", "Nama dan Kontak wajib diisi");
               return;
             }
@@ -307,8 +329,8 @@ class AnggotaView extends GetView<AnggotaController> {
               "nama": controller.namaC.text,
               "kontak": controller.kontakC.text,
               "divisi": controller.divisiC.text,
-              "status": controller.statusC.text.isEmpty 
-                  ? 'aktif' 
+              "status": controller.statusC.text.isEmpty
+                  ? 'aktif'
                   : controller.statusC.text,
               "tanggalDaftar": DateTime.now().toIso8601String(),
               "update": DateTime.now().toIso8601String(),

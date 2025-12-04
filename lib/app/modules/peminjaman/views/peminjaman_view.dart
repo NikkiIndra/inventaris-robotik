@@ -4,16 +4,21 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../../helper/format_tanggal.dart';
+import '../../../widgets/export_dialog.dart';
 import '../../anggota/controllers/anggota_controller.dart';
 import '../../barang/controllers/barang_controller.dart';
+import '../../login/controllers/login_controller.dart';
 import '../controllers/peminjaman_controller.dart';
 
 class PeminjamanView extends GetView<PeminjamanController> {
   PeminjamanView({super.key});
 
+  final authC = Get.put(LoginController());
   late final AnggotaController anggotaC = Get.find();
   late final BarangController barangC = Get.find();
-
+  final RxString selectedStatus = 'selesai'.obs;
+  final jumlahRusakC = TextEditingController(text: "0");
+  final jumlahHilangC = TextEditingController(text: "0");
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -54,20 +59,45 @@ class PeminjamanView extends GetView<PeminjamanController> {
                 const SizedBox(width: 14),
                 ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.purple.shade700,
+                    backgroundColor: Colors.blue.shade600,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(30),
                     ),
                   ),
                   onPressed: () {
-                    Get.dialog(openAddPeminjamanDialog());
+                    showDialog(
+                      context: context,
+                      builder: (_) => ExportDialog(
+                        title: "Peminjaman",
+                        onExport: (format) {
+                          controller.handleExportPeminjaman(format);
+                        },
+                      ),
+                    );
                   },
-                  icon: const Icon(Icons.add, color: Colors.white),
-                  label: const Text(
-                    "Tambah Peminjaman",
-                    style: TextStyle(color: Colors.white),
-                  ),
+                  icon: Icon(Icons.download, color: Colors.white),
+                  label: Text("Export", style: TextStyle(color: Colors.white)),
                 ),
+
+                const SizedBox(width: 14),
+                if (authC.userRole.value == "admin" ||
+                    authC.userRole.value == "inventaris")
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.purple.shade700,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                    ),
+                    onPressed: () {
+                      Get.dialog(openAddPeminjamanDialog());
+                    },
+                    icon: const Icon(Icons.add, color: Colors.white),
+                    label: const Text(
+                      "Tambah Peminjaman",
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ),
               ],
             ),
 
@@ -84,14 +114,16 @@ class PeminjamanView extends GetView<PeminjamanController> {
                     const Color(0xFFF4EEFA),
                   ),
                   minWidth: 1500,
-                  columns: const [
+                  columns: [
                     DataColumn(label: Text("Anggota")),
                     DataColumn(label: Text("Barang")),
                     DataColumn(label: Text("Jumlah")),
                     DataColumn(label: Text("Tanggal Pinjam")),
                     DataColumn(label: Text("Rencana Kembali")),
                     DataColumn(label: Text("Status")),
-                    DataColumn(label: Text("Aksi")),
+                    if (authC.userRole.value == "admin" ||
+                        authC.userRole.value == "inventaris")
+                      DataColumn(label: Text("Aksi")),
                   ],
                   rows: controller.filteredPeminjaman.map((e) {
                     final anggotaNama =
@@ -151,39 +183,40 @@ class PeminjamanView extends GetView<PeminjamanController> {
                         // STATUS
                         DataCell(statusBadgePeminjaman(status)),
 
-                        // AKSI
-                        DataCell(
-                          Row(
-                            children: [
-                              // EDIT / UPDATE STATUS
-                              GestureDetector(
-                                onTap: () {
-                                  if (status == 'dipinjam') {
-                                    Get.dialog(
-                                      updatePengembalianDialog(e['id']),
-                                    );
-                                  } else {
-                                    Get.dialog(detailPeminjamanDialog(e));
-                                  }
-                                },
-                                child: Tooltip(
-                                  message: status == 'dipinjam'
-                                      ? "Update Pengembalian"
-                                      : "Detail Peminjaman",
-                                  child: Icon(
-                                    status == 'dipinjam'
-                                        ? Icons.check_circle
-                                        : Icons.info,
-                                    size: 20,
-                                    color: status == 'dipinjam'
-                                        ? Colors.blue
-                                        : Colors.grey,
+                        if (authC.userRole.value == "admin" ||
+                            authC.userRole.value == "inventaris")
+                          DataCell(
+                            Row(
+                              children: [
+                                GestureDetector(
+                                  onTap: () {
+                                    if (status == 'dipinjam') {
+                                      Get.dialog(
+                                        updatePengembalianDialog(e['id']),
+                                      );
+                                    } else {
+                                      Get.dialog(detailPeminjamanDialog(e));
+                                    }
+                                  },
+                                  child: Tooltip(
+                                    message: status == 'dipinjam'
+                                        ? "Update Pengembalian"
+                                        : "Detail Peminjaman",
+                                    child: Icon(
+                                      status == 'dipinjam'
+                                          ? CupertinoIcons
+                                                .arrow_2_circlepath_circle_fill
+                                          : CupertinoIcons.doc_text,
+                                      size: 30,
+                                      color: status == 'dipinjam'
+                                          ? Colors.green
+                                          : Colors.grey,
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
                       ],
                     );
                   }).toList(),
@@ -198,6 +231,7 @@ class PeminjamanView extends GetView<PeminjamanController> {
 
   // DIALOG TAMBAH PEMINJAMAN
   Widget openAddPeminjamanDialog() {
+    resetBarangIfNotAvailable();
     return AlertDialog(
       title: const Text("Tambah Peminjaman"),
       content: SizedBox(
@@ -206,85 +240,114 @@ class PeminjamanView extends GetView<PeminjamanController> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-                          // PILIH ANGGOTA
-            Obx(() {
-              final List<Map<String, dynamic>> anggotaAktif = anggotaC.anggotaAktif;
-              return DropdownButtonFormField<String>(
-                decoration: const InputDecoration(
-                  labelText: "Pilih Anggota",
-                  border: OutlineInputBorder(),
-                ),
-                value: controller.anggotaIdC.text.isNotEmpty 
-                    ? controller.anggotaIdC.text 
-                    : null,
-                items: anggotaAktif.map<DropdownMenuItem<String>>((anggota) {
-                  return DropdownMenuItem<String>(
-                    value: anggota['id'] as String,
-                    child: Text(
-                      "${anggota['nama']}${anggota['divisi'] != null && anggota['divisi'].toString().isNotEmpty ? ' - ${anggota['divisi']}' : ''}",
-                    ),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  if (value != null) {
-                    controller.anggotaIdC.text = value;
-                    final selected = anggotaAktif.firstWhere(
-                      (a) => a['id'] == value,
-                      orElse: () => <String, dynamic>{},
+              // PILIH ANGGOTA
+              Obx(() {
+                final List<Map<String, dynamic>> anggotaAktif =
+                    anggotaC.anggotaAktif;
+                return DropdownButtonFormField<String>(
+                  decoration: const InputDecoration(
+                    labelText: "Pilih Anggota",
+                    border: OutlineInputBorder(),
+                  ),
+                  initialValue: controller.anggotaIdC.text.isNotEmpty
+                      ? controller.anggotaIdC.text
+                      : null,
+                  items: anggotaAktif.map<DropdownMenuItem<String>>((anggota) {
+                    return DropdownMenuItem<String>(
+                      value: anggota['id'] as String,
+                      child: Text(
+                        "${anggota['nama']}${anggota['divisi'] != null && anggota['divisi'].toString().isNotEmpty ? ' - ${anggota['divisi']}' : ''}",
+                      ),
                     );
-                    controller.selectedAnggota.value = selected;
-                  }
-                },
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Pilih anggota terlebih dahulu';
-                  }
-                  return null;
-                },
-              );
-            }),
+                  }).toList(),
+                  onChanged: (value) {
+                    if (value != null) {
+                      controller.anggotaIdC.text = value;
+                      final selected = anggotaAktif.firstWhere(
+                        (a) => a['id'] == value,
+                        orElse: () => <String, dynamic>{},
+                      );
+                      controller.selectedAnggota.value = selected;
+                    }
+                  },
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Pilih anggota terlebih dahulu';
+                    }
+                    return null;
+                  },
+                );
+              }),
 
               const SizedBox(height: 16),
 
               // PILIH BARANG
-            Obx(() {
-              final List<Map<String, dynamic>> barangTersedia = barangC.barangList.where(
-                (barang) => (barang['stok'] ?? 0) > 0
-              ).toList();
-              
-              return DropdownButtonFormField<String>(
-                decoration: const InputDecoration(
-                  labelText: "Pilih Barang",
-                  border: OutlineInputBorder(),
-                ),
-                value: controller.barangIdC.text.isNotEmpty 
-                    ? controller.barangIdC.text 
-                    : null,
-                items: barangTersedia.map<DropdownMenuItem<String>>((barang) {
-                  final stok = barang['stok'] ?? 0;
-                  return DropdownMenuItem<String>(
-                    value: barang['id'] as String,
-                    child: Text("${barang['nama']} (Stok: $stok)"),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  if (value != null) {
-                    controller.barangIdC.text = value;
-                    final selected = barangTersedia.firstWhere(
-                      (b) => b['id'] == value,
-                      orElse: () => <String, dynamic>{},
+              Obx(() {
+                final List<Map<String, dynamic>> barangTersedia = barangC
+                    .barangList
+                    .where((barang) {
+                      final kondisi = (barang['kondisi'] ?? '')
+                          .toString()
+                          .toLowerCase();
+                      final stok = barang['stok'] ?? 0;
+
+                      // hanya tampilkan yang layak dipinjam
+                      return stok > 0 &&
+                          (kondisi == 'baik' || kondisi == 'cukup');
+                    })
+                    .toList();
+
+                // Cek apakah value sekarang masih valid
+                final validInitialValue =
+                    barangTersedia.any(
+                      (b) => b['id'] == controller.barangIdC.text,
+                    )
+                    ? controller.barangIdC.text
+                    : null;
+
+                // Reset controller jika value tidak valid
+                if (validInitialValue == null) {
+                  controller.barangIdC.text = "";
+                  controller.selectedBarang.value = null;
+                }
+
+                return DropdownButtonFormField<String>(
+                  key: ValueKey(
+                    barangTersedia.map((e) => e['id']).join(),
+                  ), // <-- FIX PALING PENTING
+
+                  decoration: const InputDecoration(
+                    labelText: "Pilih Barang",
+                    border: OutlineInputBorder(),
+                  ),
+
+                  value:
+                      validInitialValue, // <-- gunakan "value" bukan "initialValue"
+
+                  items: barangTersedia.map<DropdownMenuItem<String>>((barang) {
+                    final stok = barang['stok'] ?? 0;
+                    return DropdownMenuItem<String>(
+                      value: barang['id'],
+                      child: Text("${barang['nama']} (Stok: $stok)"),
                     );
-                    controller.selectedBarang.value = selected;
-                  }
-                },
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Pilih barang terlebih dahulu';
-                  }
-                  return null;
-                },
-              );
-            }),
+                  }).toList(),
+
+                  onChanged: (value) {
+                    controller.barangIdC.text = value ?? "";
+                    controller.selectedBarang.value = barangTersedia.firstWhere(
+                      (b) => b['id'] == value,
+                      orElse: () => {},
+                    );
+                  },
+
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Pilih barang terlebih dahulu';
+                    }
+                    return null;
+                  },
+                );
+              }),
 
               const SizedBox(height: 16),
 
@@ -306,7 +369,7 @@ class PeminjamanView extends GetView<PeminjamanController> {
                   labelText: "Kondisi Saat Pinjam",
                   border: OutlineInputBorder(),
                 ),
-                value: controller.kondisiSaatPinjamC.text.isNotEmpty
+                initialValue: controller.kondisiSaatPinjamC.text.isNotEmpty
                     ? controller.kondisiSaatPinjamC.text
                     : 'baik',
                 items: const [
@@ -420,6 +483,19 @@ class PeminjamanView extends GetView<PeminjamanController> {
     );
   }
 
+  void resetBarangIfNotAvailable() {
+    final id = controller.barangIdC.text;
+    if (id.isNotEmpty) {
+      final exists = barangC.barangList.any(
+        (b) => b['id'] == id && (b['stok'] ?? 0) > 0,
+      );
+      if (!exists) {
+        controller.barangIdC.clear();
+        controller.selectedBarang.value = null;
+      }
+    }
+  }
+
   // DIALOG UPDATE PENGEMBALIAN
   Widget updatePengembalianDialog(String peminjamanId) {
     final kondisiSaatKembaliC = TextEditingController(text: 'baik');
@@ -439,7 +515,7 @@ class PeminjamanView extends GetView<PeminjamanController> {
                 labelText: "Kondisi Saat Kembali",
                 border: OutlineInputBorder(),
               ),
-              value: 'baik',
+              initialValue: 'baik',
               items: const [
                 DropdownMenuItem(value: 'baik', child: Text('Baik')),
                 DropdownMenuItem(value: 'cukup', child: Text('Cukup')),
@@ -462,26 +538,62 @@ class PeminjamanView extends GetView<PeminjamanController> {
             const SizedBox(height: 16),
 
             // STATUS
-            DropdownButtonFormField<String>(
-              decoration: const InputDecoration(
-                labelText: "Status Pengembalian",
-                border: OutlineInputBorder(),
-              ),
-              value: 'selesai',
-              items: const [
-                DropdownMenuItem(value: 'selesai', child: Text('Selesai')),
-                DropdownMenuItem(value: 'hilang', child: Text('Hilang')),
-                DropdownMenuItem(value: 'rusak', child: Text('Rusak')),
-              ],
-              onChanged: (value) {
-                if (value != null) {
-                  statusC.text = value;
-                }
-              },
-            ),
+            Obx(() {
+              return DropdownButtonFormField<String>(
+                decoration: const InputDecoration(
+                  labelText: "Status Pengembalian",
+                  border: OutlineInputBorder(),
+                ),
+                value: controller.statusPengembalian.value,
+                items: const [
+                  DropdownMenuItem(value: 'selesai', child: Text('Selesai')),
+                  DropdownMenuItem(value: 'hilang', child: Text('Hilang')),
+                  DropdownMenuItem(value: 'rusak', child: Text('Rusak')),
+                ],
+                onChanged: (v) {
+                  if (v != null) controller.statusPengembalian.value = v;
+                },
+              );
+            }),
 
             const SizedBox(height: 16),
+            Obx(() {
+              if (controller.statusPengembalian.value == "rusak") {
+                return Column(
+                  children: [
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: jumlahRusakC,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: "Jumlah Rusak",
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ],
+                );
+              }
 
+              if (controller.statusPengembalian.value == "hilang") {
+                return Column(
+                  children: [
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: jumlahHilangC,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: "Jumlah Hilang",
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ],
+                );
+              }
+
+              return const SizedBox.shrink();
+            }),
+
+            const SizedBox(height: 16),
             // CATATAN TAMBAHAN
             TextField(
               controller: catatanC,
@@ -498,14 +610,31 @@ class PeminjamanView extends GetView<PeminjamanController> {
         TextButton(onPressed: () => Get.back(), child: const Text("Batal")),
         ElevatedButton(
           onPressed: () async {
+            final status = controller.statusPengembalian.value;
+
+            int rusak = 0;
+            int hilang = 0;
+
+            if (status == "rusak") {
+              rusak = int.tryParse(jumlahRusakC.text) ?? 0;
+            }
+
+            if (status == "hilang") {
+              hilang = int.tryParse(jumlahHilangC.text) ?? 0;
+            }
+
             await controller.updatePengembalian(
               peminjamanId: peminjamanId,
               kondisiSaatKembali: kondisiSaatKembaliC.text,
-              status: statusC.text,
+              status: status,
+              jumlahRusak: rusak,
+              jumlahHilang: hilang,
               catatanTambahan: catatanC.text,
             );
+
             Get.back();
           },
+
           child: const Text("Simpan Pengembalian"),
         ),
       ],
@@ -625,7 +754,10 @@ class PeminjamanView extends GetView<PeminjamanController> {
       ),
       child: Text(
         statusText,
-        style: const TextStyle(fontWeight: FontWeight.w500),
+        style: const TextStyle(
+          fontWeight: FontWeight.w500,
+          color: Colors.white,
+        ),
       ),
     );
   }
